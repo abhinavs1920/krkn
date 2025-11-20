@@ -9,6 +9,7 @@ in `krkn.resiliency.score`.
 
 from __future__ import annotations
 
+import base64
 import datetime
 import logging
 import os
@@ -50,10 +51,11 @@ class Resiliency:
         env_yaml = os.getenv(self.ENV_VAR_NAME)
         if env_yaml:
             try:
-                raw_yaml_data = yaml.safe_load(env_yaml)
-            except yaml.YAMLError as exc:
+                decoded_yaml = base64.b64decode(env_yaml).decode('utf-8')
+                raw_yaml_data = yaml.safe_load(decoded_yaml)
+            except (yaml.YAMLError, base64.binascii.Error, UnicodeDecodeError) as exc:
                 raise ValueError(
-                    f"Invalid YAML in environment variable {self.ENV_VAR_NAME}: {exc}"
+                    f"Invalid base64 or YAML in environment variable {self.ENV_VAR_NAME}: {exc}"
                 ) from exc
             logging.info("Loaded SLO configuration from environment variable %s", self.ENV_VAR_NAME)
             # Store optional Prometheus URL if provided
