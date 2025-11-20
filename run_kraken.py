@@ -53,8 +53,12 @@ def main(options, command: Optional[str]) -> int:
     print(pyfiglet.figlet_format("kraken"))
     logging.info("Starting kraken")
 
-    # Determine execution mode (standalone vs controller)
-    run_mode = os.getenv("KRKN_RUN_MODE", "standalone").lower()
+    # Determine execution mode (standalone, controller, or disabled)
+    run_mode = os.getenv("RESILIENCY_ENABLED_MODE", "standalone").lower()
+    valid_run_modes = {"standalone", "controller", "disabled"}
+    if run_mode not in valid_run_modes:
+        logging.warning("Unknown RESILIENCY_ENABLED_MODE '%s'. Defaulting to 'standalone'", run_mode)
+        run_mode = "standalone"
     logging.info(f"Execution mode set to: {run_mode}")
 
     cfg = options.cfg
@@ -93,10 +97,9 @@ def main(options, command: Optional[str]) -> int:
         iterations = get_yaml_item_value(config["tunings"], "iterations", 1)
         daemon_mode = get_yaml_item_value(config["tunings"], "daemon_mode", False)
 
-        prometheus_url = config["performance_monitoring"].get("prometheus_url")
-        prometheus_bearer_token = config["performance_monitoring"].get(
-            "prometheus_bearer_token"
-        )
+        # Prometheus configuration: environment variables take precedence over config file
+        prometheus_url = os.getenv("PROMETHEUS_URL") or config["performance_monitoring"].get("prometheus_url")
+        prometheus_bearer_token = os.getenv("PROMETHEUS_BEARER_TOKEN") or config["performance_monitoring"].get("prometheus_bearer_token")
         run_uuid = config["performance_monitoring"].get("uuid")
         enable_alerts = get_yaml_item_value(
             config["performance_monitoring"], "enable_alerts", False
@@ -105,23 +108,10 @@ def main(options, command: Optional[str]) -> int:
             config["performance_monitoring"], "enable_metrics", False
         )
 
-        # Ensure resiliency scoring can obtain a Prometheus handle even when
-        # metrics/alerts collection is disabled.
-        resiliency_cfg = get_yaml_item_value(
-            config,
-            "resiliency",
-            {"enabled": False},
-        )
-        resiliency_enabled = resiliency_cfg.get("enabled", False)
-
-        # ------------------------------------------------------------------
-        # Prometheus URL fallback logic
-        # ------------------------------------------------------------------
-        if (not prometheus_url or prometheus_url.strip() == "") and resiliency_enabled:
-            alt_url = resiliency_cfg.get("prometheus_url")
-            if alt_url:
-                logging.info("Using Prometheus URL from resiliency config: %s", alt_url)
-                prometheus_url = alt_url
+        # Disable resiliency if Prometheus URL is not available
+        if (not prometheus_url or prometheus_url.strip() == "") and run_mode != "disabled":
+            logging.warning("Prometheus URL not provided; disabling resiliency score features.")
+            run_mode = "disabled"
 
         # Default placeholder; will be overridden if a Prometheus URL is available
         prometheus = None
@@ -272,7 +262,7 @@ def main(options, command: Optional[str]) -> int:
         else:
             elastic_search = None
         summary = ChaosRunAlertSummary()
-        if enable_metrics or enable_alerts or check_critical_alerts or resiliency_enabled:
+        if enable_metrics or enable_alerts or check_critical_alerts or run_mode != "disabled":
             prometheus = KrknPrometheus(prometheus_url, prometheus_bearer_token)
             # Quick connectivity probe for Prometheus – disable resiliency if unreachable
             try:
@@ -280,11 +270,10 @@ def main(options, command: Optional[str]) -> int:
                     "up", datetime.datetime.utcnow() - datetime.timedelta(seconds=60), datetime.datetime.utcnow(), granularity=60
                 )
             except Exception as prom_exc:  
-                logging.error("Prometheus connectivity test failed: %s. Disabling resiliency scoring." , prom_exc)
-                if resiliency_enabled:
-                    resiliency_enabled = False
+                logging.error("Prometheus connectivity test failed: %s. Disabling resiliency features as Prometheus is required for SLO evaluation.", prom_exc)
+                run_mode = "disabled"
 
-        resiliency_obj = Resiliency() if resiliency_enabled else None # Initialize resiliency orchestrator
+        resiliency_obj = Resiliency() if run_mode != "disabled" else None  # Initialize resiliency orchestrator
         logging.info("Server URL: %s" % kubecli.get_host())
 
         if command == "list-rollback":
