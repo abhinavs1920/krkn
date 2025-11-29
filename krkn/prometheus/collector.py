@@ -4,45 +4,7 @@ import datetime
 import logging
 from typing import Dict, Any, List, Optional
 
-import yaml
 from krkn_lib.prometheus.krkn_prometheus import KrknPrometheus
-from krkn.prometheus.client import metrics as client_metrics
-
-
-def collect_prometheus_metrics(
-    prom_cli: KrknPrometheus,
-    metrics_profile: str | dict,
-    start_time: datetime.datetime,
-    end_time: datetime.datetime,
-    granularity: int = 30,
-) -> list[dict[str, Any]]:
-    """Collect Prometheus metrics described by a metrics profile for a given time window.
-
-    Args:
-        prom_cli: Configured KrknPrometheus client instance.
-        metrics_profile: Either a path to a YAML file or a pre-parsed dict containing a
-            `metrics` list. Each item must include `query` and `metricName` keys and can
-            optionally set `instant: true` to request an instant query.
-        start_time: Start of the window (datetime).
-        end_time: End of the window (datetime).
-        granularity: Step in seconds used for range queries (default: 30).
-
-    Returns:
-        List of metric dictionaries as produced by `krkn.prometheus.client.metrics`.
-    """
-
-    # Reuse implementation from krkn.prometheus.client.metrics to avoid code duplication
-    return client_metrics(
-        prom_cli=prom_cli,
-        elastic=None,
-        run_uuid="",
-        start_time=int(start_time.timestamp()),
-        end_time=int(end_time.timestamp()),
-        metrics_profile=metrics_profile,
-        elastic_metrics_index=None,
-        telemetry_json="{}",
-    )
-
 
 
 # -----------------------------------------------------------------------------
