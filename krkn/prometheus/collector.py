@@ -41,7 +41,6 @@ def evaluate_slos(
     slo_list: List[Dict[str, Any]],
     start_time: datetime.datetime,
     end_time: datetime.datetime,
-    granularity: int = 30,
 ) -> Dict[str, bool]:
     """Evaluate a list of SLO expressions against Prometheus.
 
@@ -65,7 +64,6 @@ def evaluate_slos(
                 expr,
                 start_time=start_time,
                 end_time=end_time,
-                granularity=granularity,
             )
 
             passed = slo_passed(response)
