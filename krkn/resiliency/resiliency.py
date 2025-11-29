@@ -28,9 +28,6 @@ from krkn.resiliency.score import calculate_resiliency_score
 class Resiliency:  
     """Central orchestrator for resiliency scoring."""
 
-
-
-
     ENV_VAR_NAME = "KRKN_ALERTS_YAML_CONTENT"
 
     def __init__(self, alerts_yaml_path: str = "config/alerts.yaml"):
@@ -48,20 +45,32 @@ class Resiliency:
         For backward-compatibility the legacy list-only format is still accepted.
         """
         raw_yaml_data: Any
-        env_yaml = os.getenv(self.ENV_VAR_NAME)
+        env_yaml = os.getenv(self.ENV_VAR_NAME, '').strip()
         if env_yaml:
             try:
-                decoded_yaml = base64.b64decode(env_yaml).decode('utf-8')
+                try:
+                    decoded_yaml = base64.b64decode(env_yaml, validate=True).decode('utf-8')
+                except (base64.binascii.Error, UnicodeDecodeError) as e:
+                    logging.debug("Failed to base64 decode %s, trying as plain YAML: %s", 
+                                self.ENV_VAR_NAME, str(e))
+                    decoded_yaml = env_yaml
+                
                 raw_yaml_data = yaml.safe_load(decoded_yaml)
-            except (yaml.YAMLError, base64.binascii.Error, UnicodeDecodeError) as exc:
-                raise ValueError(
-                    f"Invalid base64 or YAML in environment variable {self.ENV_VAR_NAME}: {exc}"
-                ) from exc
-            logging.info("Loaded SLO configuration from environment variable %s", self.ENV_VAR_NAME)
-            # Store optional Prometheus URL if provided
-            if isinstance(raw_yaml_data, dict):
-                self.prometheus_url = raw_yaml_data.get("prometheus_url")  # may be None
-                raw_yaml_data = raw_yaml_data.get("slos", raw_yaml_data.get("alerts", []))
+                logging.info("Loaded SLO configuration from environment variable %s", self.ENV_VAR_NAME)
+                
+                if isinstance(raw_yaml_data, dict):
+                    self.prometheus_url = raw_yaml_data.get("prometheus_url")
+                    raw_yaml_data = raw_yaml_data.get("slos", raw_yaml_data.get("alerts", []))
+                
+            except yaml.YAMLError as exc:
+                logging.error("Failed to parse YAML from %s: %s", self.ENV_VAR_NAME, str(exc))
+                raw_yaml_data = []  
+                self.prometheus_url = None
+            except Exception as exc:
+                logging.error("Unexpected error loading SLOs from %s: %s", 
+                            self.ENV_VAR_NAME, str(exc))
+                raw_yaml_data = [] 
+                self.prometheus_url = None
         else:
             if not os.path.exists(alerts_yaml_path):
                 raise FileNotFoundError(f"alerts file not found: {alerts_yaml_path}")
@@ -87,7 +96,6 @@ class Resiliency:
         prom_cli: KrknPrometheus,
         start_time: datetime.datetime,
         end_time: datetime.datetime,
-        granularity: int = 30,
     ) -> None:
         """Evaluate all SLO expressions against Prometheus and cache results."""
 
@@ -97,7 +105,6 @@ class Resiliency:
             slo_list=self._slos,
             start_time=start_time,
             end_time=end_time,
-            granularity=granularity,
         )
 
     def calculate_score(
@@ -143,7 +150,6 @@ class Resiliency:
         weight: float | int = 1,
         health_check_results: Optional[Dict[str, bool]] = None,
         weights: Optional[Dict[str, int]] = None,
-        granularity: int = 30,
     ) -> int:
         """
         Evaluate SLOs for a single scenario window and store the result.
@@ -156,7 +162,6 @@ class Resiliency:
             weight: Weight to use for the final weighted average calculation.
             health_check_results: Optional mapping of custom health-check name ➡ bool.
             weights: Optional override of severity weights for SLO calculation.
-            granularity: Prometheus query step in seconds.
         Returns:
             The calculated integer resiliency score (0-100) for this scenario.
         """
@@ -165,7 +170,6 @@ class Resiliency:
             slo_list=self._slos,
             start_time=start_time,
             end_time=end_time,
-            granularity=granularity,
         )
         slo_defs = {slo["name"]: slo["severity"] for slo in self._slos}
         score, breakdown = calculate_resiliency_score(
@@ -197,7 +201,6 @@ class Resiliency:
         total_start_time: datetime.datetime,
         total_end_time: datetime.datetime,
         weights: Optional[Dict[str, int]] = None,
-        granularity: int = 30,
     ) -> None:
         if not self.scenario_reports:
             raise RuntimeError("No scenario reports added – nothing to finalize")
@@ -214,7 +217,6 @@ class Resiliency:
             slo_list=self._slos,
             start_time=total_start_time,
             end_time=total_end_time,
-            granularity=granularity,
         )
         slo_defs = {slo["name"]: slo["severity"] for slo in self._slos}
         system_stability_score, full_breakdown = calculate_resiliency_score(

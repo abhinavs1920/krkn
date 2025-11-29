@@ -54,12 +54,11 @@ def main(options, command: Optional[str]) -> int:
     logging.info("Starting kraken")
 
     # Determine execution mode (standalone, controller, or disabled)
-    run_mode = os.getenv("RESILIENCY_ENABLED_MODE", "standalone").lower()
+    run_mode = (os.getenv("RESILIENCY_ENABLED_MODE") or "standalone").lower().strip()
     valid_run_modes = {"standalone", "controller", "disabled"}
     if run_mode not in valid_run_modes:
         logging.warning("Unknown RESILIENCY_ENABLED_MODE '%s'. Defaulting to 'standalone'", run_mode)
         run_mode = "standalone"
-    logging.info(f"Execution mode set to: {run_mode}")
 
     cfg = options.cfg
     # Parse and read the config
