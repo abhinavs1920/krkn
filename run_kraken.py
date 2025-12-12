@@ -53,19 +53,19 @@ def main(options, command: Optional[str]) -> int:
     print(pyfiglet.figlet_format("kraken"))
     logging.info("Starting kraken")
 
-    # Determine execution mode (standalone, controller, or disabled)
-    run_mode = (os.getenv("RESILIENCY_ENABLED_MODE") or "standalone").lower().strip()
-    valid_run_modes = {"standalone", "controller", "disabled"}
-    if run_mode not in valid_run_modes:
-        logging.warning("Unknown RESILIENCY_ENABLED_MODE '%s'. Defaulting to 'standalone'", run_mode)
-        run_mode = "standalone"
-
     cfg = options.cfg
     # Parse and read the config
     if os.path.isfile(cfg):
         with open(cfg, "r") as f:
             config = yaml.full_load(f)
         global kubeconfig_path, wait_duration, kraken_config
+
+        # Determine execution mode (standalone, controller, or disabled)
+        run_mode = get_yaml_item_value(config["kraken"], "resiliency_mode", "standalone").lower().strip()
+        valid_run_modes = {"standalone", "controller", "disabled"}
+        if run_mode not in valid_run_modes:
+            logging.warning("Unknown resiliency_mode '%s' in config. Defaulting to 'standalone'", run_mode)
+            run_mode = "standalone"
 
         kubeconfig_path = os.path.expanduser(
             get_yaml_item_value(config["kraken"], "kubeconfig_path", "")
@@ -266,7 +266,9 @@ def main(options, command: Optional[str]) -> int:
             # Quick connectivity probe for Prometheus – disable resiliency if unreachable
             try:
                 prometheus.process_prom_query_in_range(
-                    "up", datetime.datetime.utcnow() - datetime.timedelta(seconds=60), datetime.datetime.utcnow(), granularity=60
+                    "up",
+                    datetime.datetime.utcnow() - datetime.timedelta(seconds=60),
+                    datetime.datetime.utcnow()
                 )
             except Exception as prom_exc:  
                 logging.error("Prometheus connectivity test failed: %s. Disabling resiliency features as Prometheus is required for SLO evaluation.", prom_exc)

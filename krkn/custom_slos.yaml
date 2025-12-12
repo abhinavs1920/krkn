@@ -1,0 +1,8 @@
+prometheus_url: http://localhost:9090
+slos:
+  - expr: sum(rate(container_cpu_usage_seconds_total{container!="",pod=~"web.*"}[2m])) > 0.1
+    severity: warning
+    description: "Web CPU spike"
+  - expr: kube_pod_container_status_restarts_total{pod=~"web.*"} > 0
+    severity: critical
+    description: "Web restarts"

@@ -1,0 +1,73 @@
+{
+  "scenarios": [
+    {
+      "name": "scenarios/kube/cpu-hog.yml",
+      "window": {
+        "start": "2025-11-20T19:45:52",
+        "end": "2025-11-20T19:45:52"
+      },
+      "score": 58,
+      "weight": 1,
+      "breakdown": {
+        "total_points": 12,
+        "points_lost": 5,
+        "passed": 3,
+        "failed": 3
+      },
+      "slo_results": {
+        "95th percentile API server request latency > 1s. {{$value}}s": false,
+        "More than 5% API server requests are failing with 5xx errors.": true,
+        "Pod {{$labels.pod}} in namespace {{$labels.namespace}} restarted more than 3 times in last 10m.": true,
+        "Node CPU usage > 85%.": false,
+        "Node memory usage > 90%.": false,
+        "Pod {{$labels.pod}} in namespace {{$labels.namespace}} is not ready.": true
+      },
+      "health_check_results": {}
+    },
+    {
+      "name": "scenarios/kube/pod-network-filter.yml",
+      "window": {
+        "start": "2025-11-20T19:45:53",
+        "end": "2025-11-20T19:45:53"
+      },
+      "score": 58,
+      "weight": 1,
+      "breakdown": {
+        "total_points": 12,
+        "points_lost": 5,
+        "passed": 3,
+        "failed": 3
+      },
+      "slo_results": {
+        "95th percentile API server request latency > 1s. {{$value}}s": false,
+        "More than 5% API server requests are failing with 5xx errors.": true,
+        "Pod {{$labels.pod}} in namespace {{$labels.namespace}} restarted more than 3 times in last 10m.": true,
+        "Node CPU usage > 85%.": false,
+        "Node memory usage > 90%.": false,
+        "Pod {{$labels.pod}} in namespace {{$labels.namespace}} is not ready.": true
+      },
+      "health_check_results": {}
+    }
+  ],
+  "system_stability": {
+    "window": {
+      "start": "2025-11-20T19:45:45",
+      "end": "2025-11-20T19:45:54"
+    },
+    "score": 58,
+    "breakdown": {
+      "total_points": 12,
+      "points_lost": 5,
+      "passed": 3,
+      "failed": 3
+    },
+    "slo_results": {
+      "95th percentile API server request latency > 1s. {{$value}}s": false,
+      "More than 5% API server requests are failing with 5xx errors.": true,
+      "Pod {{$labels.pod}} in namespace {{$labels.namespace}} restarted more than 3 times in last 10m.": true,
+      "Node CPU usage > 85%.": false,
+      "Node memory usage > 90%.": false,
+      "Pod {{$labels.pod}} in namespace {{$labels.namespace}} is not ready.": true
+    }
+  }
+}

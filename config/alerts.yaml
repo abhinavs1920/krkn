@@ -1,129 +1,49 @@
-# etcd
 
-- expr: avg_over_time(histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket[2m]))[10m:]) > 0.01
-  description: 10 minutes avg. 99th etcd fsync latency on {{$labels.pod}} higher than 10ms. {{$value}}s
+- expr: histogram_quantile(0.95, sum(rate(apiserver_request_duration_seconds_bucket{verb=~"GET|POST|PUT|DELETE"}[5m])) by (le)) < 1
+  description: 95th percentile API server request latency > 1s. {{$value}}s
   severity: warning
 
-- expr: avg_over_time(histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket[2m]))[10m:]) > 1
-  description: 10 minutes avg. 99th etcd fsync latency on {{$labels.pod}} higher than 1s. {{$value}}s
-  severity: error
+  # 2. API Server Error Rate
+- expr: (sum(rate(apiserver_request_total{code=~"5.."}[5m])) / sum(rate(apiserver_request_total[5m]))) * 100 < 5
+  description: More than 5% API server requests are failing with 5xx errors.
+  severity: critical
 
-- expr: avg_over_time(histogram_quantile(0.99, rate(etcd_disk_backend_commit_duration_seconds_bucket[2m]))[10m:]) > 0.03
-  description: 10 minutes avg. 99th etcd commit latency on {{$labels.pod}} higher than 30ms. {{$value}}s
+# 3. Pod Restart Spike
+- expr: increase(kube_pod_container_status_restarts_total[10m]) < 3
+  description: Pod {{$labels.pod}} in namespace {{$labels.namespace}} restarted more than 3 times in last 10m.
   severity: warning
 
-- expr: rate(etcd_server_leader_changes_seen_total[2m]) > 0
-  description: etcd leader changes observed
+# 4. Node CPU Usage
+- expr: (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100 < 85
+  description: Node CPU usage > 85%.
   severity: warning
 
-- expr: (last_over_time(etcd_mvcc_db_total_size_in_bytes[5m]) / last_over_time(etcd_server_quota_backend_bytes[5m]))*100 > 95
-  description: etcd cluster database is running full. 
+# 5. Node Memory Usage
+- expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 < 90
+  description: Node memory usage > 90%.
   severity: critical
-  
-- expr: (last_over_time(etcd_mvcc_db_total_size_in_use_in_bytes[5m]) / last_over_time(etcd_mvcc_db_total_size_in_bytes[5m])) < 0.5
-  description: etcd database size in use is less than 50% of the actual allocated storage.
-  severity: warning  
 
-- expr: rate(etcd_server_proposals_failed_total{job=~".*etcd.*"}[15m]) > 5
-  description: etcd cluster has high number of proposal failures.
-  severity: warning 
-
-- expr: histogram_quantile(0.99, rate(etcd_network_peer_round_trip_time_seconds_bucket{job=~".*etcd.*"}[5m])) > 0.15
-  description: etcd cluster member communication is slow.
-  severity: warning 
-
-- expr: histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{job=~".*etcd.*", grpc_method!="Defragment", grpc_type="unary"}[5m])) without(grpc_type)) > 0.15
-  description: etcd grpc requests are slow.
-  severity: critical
-      
-- expr: 100 * sum(rate(grpc_server_handled_total{job=~".*etcd.*", grpc_code=~"Unknown|FailedPrecondition|ResourceExhausted|Internal|Unavailable|DataLoss|DeadlineExceeded"}[5m])) without (grpc_type, grpc_code) / sum(rate(grpc_server_handled_total{job=~".*etcd.*"}[5m])) without (grpc_type, grpc_code) > 5
-  description: etcd cluster has high number of failed grpc requests.
-  severity: critical      
-      
-- expr: etcd_server_has_leader{job=~".*etcd.*"} == 0
-  description: etcd cluster has no leader.
-  severity: warning    
-    
-- expr: sum(up{job=~".*etcd.*"} == bool 1) without (instance) < ((count(up{job=~".*etcd.*"}) without (instance) + 1) / 2)
-  description: etcd cluster has insufficient number of members.
-  severity: warning      
-
-- expr: max without (endpoint) ( sum without (instance) (up{job=~".*etcd.*"} == bool 0) or count without (To) ( sum without (instance) (rate(etcd_network_peer_sent_failures_total{job=~".*etcd.*"}[120s])) > 0.01 )) > 0
-  description: etcd cluster members are down.
-  severity: warning  
-
-# API server
-- expr: avg_over_time(histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{apiserver="kube-apiserver", verb=~"POST|PUT|DELETE|PATCH", subresource!~"log|exec|portforward|attach|proxy"}[2m])) by (le, resource, verb))[10m:]) > 1
-  description: 10 minutes avg. 99th mutating API call latency for {{$labels.verb}}/{{$labels.resource}} higher than 1 second. {{$value}}s
-  severity: error
-
-- expr: avg_over_time(histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{apiserver="kube-apiserver", verb=~"LIST|GET", subresource!~"log|exec|portforward|attach|proxy", scope="resource"}[2m])) by (le, resource, verb, scope))[5m:]) > 1
-  description: 5 minutes avg. 99th read-only API call latency for {{$labels.verb}}/{{$labels.resource}} in scope {{$labels.scope}} higher than 1 second. {{$value}}s
-  severity: error
-
-- expr: avg_over_time(histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{apiserver="kube-apiserver", verb=~"LIST|GET", subresource!~"log|exec|portforward|attach|proxy", scope="namespace"}[2m])) by (le, resource, verb, scope))[5m:]) > 5
-  description: 5 minutes avg. 99th read-only API call latency for {{$labels.verb}}/{{$labels.resource}} in scope {{$labels.scope}} higher than 5 seconds. {{$value}}s
-  severity: error
-
-- expr: avg_over_time(histogram_quantile(0.99, sum(irate(apiserver_request_duration_seconds_bucket{apiserver="kube-apiserver", verb=~"LIST|GET", subresource!~"log|exec|portforward|attach|proxy", scope="cluster"}[2m])) by (le, resource, verb, scope))[5m:]) > 30
-  description: 5 minutes avg. 99th read-only API call latency for {{$labels.verb}}/{{$labels.resource}} in scope {{$labels.scope}} higher than 30 seconds. {{$value}}s
-  severity: error
-
-# Control plane pods
-
-- expr: up{job=~"crio|kubelet"} == 0
-  description: "{{$labels.node}}/{{$labels.job}} down"
+# 6. Persistent Volume Usage
+- expr: (kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) * 100 < 90
+  description: Persistent volume usage > 90% for {{$labels.persistentvolumeclaim}} in {{$labels.namespace}}.
   severity: warning
 
-- expr: up{job="ovnkube-node"} == 0
-  description: "{{$labels.instance}}/{{$labels.pod}} {{$labels.job}} down"
+# 7. Pod Not Ready
+- expr: kube_pod_status_ready{condition="true"} == 0
+  description: Pod {{$labels.pod}} in namespace {{$labels.namespace}} is not ready.
+  severity: critical
+
+# 8. Deployment Availability (SLO breach)
+- expr: (kube_deployment_status_replicas_available / kube_deployment_spec_replicas) < 0.9
+  description: Deployment {{$labels.deployment}} availability < 90%.
   severity: warning
 
-# Service sync latency
-- expr: histogram_quantile(0.99, sum(rate(kubeproxy_network_programming_duration_seconds_bucket[2m])) by (le)) > 10
-  description: 99th Kubeproxy network programming latency higher than 10 seconds. {{$value}}s 
+# 9. Container CPU Throttling
+- expr: rate(container_cpu_cfs_throttled_seconds_total[5m]) / rate(container_cpu_cfs_periods_total[5m]) > 0.2
+  description: Container {{$labels.container}} in {{$labels.namespace}} is CPU throttled > 20%.
   severity: warning
 
-# Prometheus alerts
-- expr: ALERTS{severity="critical", alertstate="firing"} > 0
-  description: Critical prometheus alert. {{$labels.alertname}}
+# 10. Pod Pending Time Breach
+- expr: (time() - kube_pod_start_time) > 300 and on(pod, namespace) kube_pod_status_phase{phase="Pending"} == 1
+  description: Pod {{$labels.pod}} has been pending for more than 5 minutes.
   severity: warning
-
-# etcd CPU and usage increase
-- expr: sum(rate(container_cpu_usage_seconds_total{image!='', namespace='openshift-etcd', container='etcd'}[1m])) * 100 / sum(machine_cpu_cores)  > 5
-  description: Etcd CPU usage increased significantly by {{$value}}%
-  severity: critical
-
-# etcd memory usage increase
-- expr: sum(deriv(container_memory_usage_bytes{image!='', namespace='openshift-etcd', container='etcd'}[5m])) * 100 / sum(node_memory_MemTotal_bytes) > 5
-  description: Etcd memory usage increased significantly by {{$value}}%
-  severity: critical
-
-# Openshift API server CPU and memory usage increase
-- expr: sum(rate(container_cpu_usage_seconds_total{image!='', namespace='openshift-apiserver', container='openshift-apiserver'}[1m])) * 100 / sum(machine_cpu_cores) > 5
-  description: openshift apiserver cpu usage increased significantly by {{$value}}%
-  severity: critical
-
-- expr: (sum(deriv(container_memory_usage_bytes{namespace='openshift-apiserver', container='openshift-apiserver'}[5m]))) * 100 / sum(node_memory_MemTotal_bytes) > 5
-  description: openshift apiserver memory usage increased significantly by {{$value}}%
-  severity: critical
-
-# Openshift kube API server CPU and memory usage increase
-- expr: sum(rate(container_cpu_usage_seconds_total{image!='', namespace='openshift-kube-apiserver', container='kube-apiserver'}[1m])) * 100 / sum(machine_cpu_cores) > 5
-  description: openshift apiserver cpu usage increased significantly by {{$value}}%
-  severity: critical
-
-- expr: (sum(deriv(container_memory_usage_bytes{namespace='openshift-kube-apiserver', container='kube-apiserver'}[5m]))) * 100 / sum(node_memory_MemTotal_bytes) > 5
-  description: openshift apiserver memory usage increased significantly by {{$value}}%
-  severity: critical
-
-# Master node CPU usage increase
-- expr: (sum((sum(deriv(pod:container_cpu_usage:sum{container="",pod!=""}[5m])) BY (namespace, pod) * on(pod, namespace) group_left(node) (node_namespace_pod:kube_pod_info:)  )  *  on(node) group_left(role) (max by (node) (kube_node_role{role="master"})))) * 100 / sum(machine_cpu_cores) > 5
-  description: master nodes cpu usage increased significantly by {{$value}}%
-  severity: critical
-
-# Master nodes memory usage increase
-- expr: (sum((sum(deriv(container_memory_usage_bytes{container="",pod!=""}[5m])) BY (namespace, pod) * on(pod, namespace) group_left(node) (node_namespace_pod:kube_pod_info:)  )  *  on(node) group_left(role) (max by (node) (kube_node_role{role="master"})))) * 100 / sum(node_memory_MemTotal_bytes) > 5
-  description: master nodes memory usage increased significantly by {{$value}}%
-  severity: critical
-

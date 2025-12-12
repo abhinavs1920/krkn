@@ -91,21 +91,6 @@ class Resiliency:
     # ---------------------------------------------------------------------
     # Public API
     # ---------------------------------------------------------------------
-    def evaluate_slos(
-        self,
-        prom_cli: KrknPrometheus,
-        start_time: datetime.datetime,
-        end_time: datetime.datetime,
-    ) -> None:
-        """Evaluate all SLO expressions against Prometheus and cache results."""
-
-        # Use shared evaluation helper from `krkn.prometheus.collector`
-        self._results = evaluate_slos(
-            prom_cli=prom_cli,
-            slo_list=self._slos,
-            start_time=start_time,
-            end_time=end_time,
-        )
 
     def calculate_score(
         self,
@@ -349,8 +334,9 @@ def compute_resiliency(*,
 
     try:
         resiliency_obj = Resiliency(alerts_yaml_path)
-        resiliency_obj.evaluate_slos(
+        resiliency_obj._results = evaluate_slos(
             prom_cli=prometheus,
+            slo_list=resiliency_obj._slos,
             start_time=start_time,
             end_time=end_time,
         )

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: krkn         # one per target
+  namespace: default
+  annotations:
+    prometheus.io/scrape: "true"   # <- magic switch
+    prometheus.io/port:   "8080"   # metrics port
+spec:
+  selector:
+    app: krkn        # match the pod/container you spun up
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080

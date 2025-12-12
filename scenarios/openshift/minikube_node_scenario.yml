@@ -1,0 +1,14 @@
+# scenarios/openshift/minikube_node_scenario.yml
+scenarios:
+  - name: "Minikube Node CPU Stress"
+    actions:
+      - name: "node_cpu_stress"
+        action: "cpu_hog"
+        duration: 30
+        target_node: "minikube"  # This should match your node name
+        cpu_count: 1
+        cpu_percent: 50
+        tolerations:
+          - key: "node-role.kubernetes.io/control-plane"
+            operator: "Exists"
+            effect: "NoSchedule"

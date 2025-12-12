@@ -67,4 +67,5 @@ CI/results.markdown
 
 #env
 chaos/*
+krkn-venv/*
 
