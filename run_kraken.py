@@ -96,9 +96,8 @@ def main(options, command: Optional[str]) -> int:
         iterations = get_yaml_item_value(config["tunings"], "iterations", 1)
         daemon_mode = get_yaml_item_value(config["tunings"], "daemon_mode", False)
 
-        # Prometheus configuration: environment variables take precedence over config file
-        prometheus_url = os.getenv("PROMETHEUS_URL") or config["performance_monitoring"].get("prometheus_url")
-        prometheus_bearer_token = os.getenv("PROMETHEUS_BEARER_TOKEN") or config["performance_monitoring"].get("prometheus_bearer_token")
+        prometheus_url = config["performance_monitoring"].get("prometheus_url")
+        prometheus_bearer_token = config["performance_monitoring"].get("prometheus_bearer_token")
         run_uuid = config["performance_monitoring"].get("uuid")
         enable_alerts = get_yaml_item_value(
             config["performance_monitoring"], "enable_alerts", False
