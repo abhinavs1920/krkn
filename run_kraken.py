@@ -395,42 +395,14 @@ def main(options, command: Optional[str]) -> int:
                         chaos_telemetry.scenarios.extend(scenario_telemetries)
                         batch_window_end_dt = datetime.datetime.utcnow()
                         if resiliency_obj:
-                            for tel in scenario_telemetries:
-                                try:
-                                    if isinstance(tel, dict):
-                                        st_ts = tel.get("start_timestamp")
-                                        en_ts = tel.get("end_timestamp")
-                                        scen_name = tel.get("scenario", scenario_type)
-                                    else:
-                                        st_ts = getattr(tel, "start_timestamp", None)
-                                        en_ts = getattr(tel, "end_timestamp", None)
-                                        scen_name = getattr(tel, "scenario", scenario_type)
-
-                                    if st_ts and en_ts:
-                                        st_dt = datetime.datetime.fromtimestamp(int(st_ts))
-                                        en_dt = datetime.datetime.fromtimestamp(int(en_ts))
-                                    else:
-                                        st_dt = batch_window_start_dt
-                                        en_dt = batch_window_end_dt
-
-                                    resiliency_obj.add_scenario_report(
-                                        scenario_name=str(scen_name),
-                                        prom_cli=prometheus,
-                                        start_time=st_dt,
-                                        end_time=en_dt,
-                                        weight=1,
-                                        health_check_results=None,
-                                    )
-
-                                    compact = Resiliency.compact_breakdown(
-                                        resiliency_obj.scenario_reports[-1]
-                                    )
-                                    if isinstance(tel, dict):
-                                        tel["resiliency_report"] = compact
-                                    else:
-                                        setattr(tel, "resiliency_report", compact)
-                                except Exception as e:
-                                    logging.error("Resiliency per-scenario evaluation failed: %s", e)
+                            Resiliency.add_scenario_reports(
+                                resiliency_obj=resiliency_obj,
+                                scenario_telemetries=scenario_telemetries,
+                                prom_cli=prometheus,
+                                scenario_type=scenario_type,
+                                batch_start_dt=batch_window_start_dt,
+                                batch_end_dt=batch_window_end_dt,
+                            )
 
                         post_critical_alerts = 0
                         if check_critical_alerts:
@@ -495,35 +467,14 @@ def main(options, command: Optional[str]) -> int:
 
         if resiliency_obj:
             try:
-                resiliency_obj.finalize_report(
+                summary_report, detailed_report = Resiliency.finalize_and_save(
+                    resiliency_obj=resiliency_obj,
                     prom_cli=prometheus,
                     total_start_time=datetime.datetime.fromtimestamp(start_time),
                     total_end_time=datetime.datetime.fromtimestamp(end_time),
+                    run_mode=run_mode,
+                    logger=logging,
                 )
-                resiliency_summary = resiliency_obj.get_summary()
-                resiliency_report = resiliency_obj.get_detailed_report()
-
-                summary_report = resiliency_summary
-                detailed_report = resiliency_report
-
-                if run_mode == "controller":
-                    # --- KRKNCTL MODE ---
-                    try:
-                        detailed_report_json = json.dumps(detailed_report)
-                        print(f"KRKN_RESILIENCY_REPORT_JSON:{detailed_report_json}")
-                        logging.info("Resiliency report logged to stdout for krknctl.")
-                    except Exception as e:
-                        logging.error(f"Failed to serialize and log detailed resiliency report: {e}")
-                else:
-                    # --- STANDALONE MODE (default behaviour) ---
-                    try:
-                        with open("kraken.report", "w", encoding="utf-8") as fp:
-                            json.dump(summary_report, fp, indent=2)
-                        with open("resiliency-report.json", "w", encoding="utf-8") as fp:
-                            json.dump(detailed_report, fp, indent=2)
-                        logging.info("Resiliency reports written: kraken.report and resiliency-report.json")
-                    except Exception as io_exc:
-                        logging.error("Failed to write resiliency report files: %s", io_exc)
 
             except Exception as e:
                 logging.error("Failed to finalize resiliency scoring: %s", e)

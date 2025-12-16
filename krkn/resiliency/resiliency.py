@@ -91,21 +91,6 @@ class Resiliency:
     # ---------------------------------------------------------------------
     # Public API
     # ---------------------------------------------------------------------
-    def evaluate_slos(
-        self,
-        prom_cli: KrknPrometheus,
-        start_time: datetime.datetime,
-        end_time: datetime.datetime,
-    ) -> None:
-        """Evaluate all SLO expressions against Prometheus and cache results."""
-
-        # Use shared evaluation helper from `krkn.prometheus.collector`
-        self._results = evaluate_slos(
-            prom_cli=prom_cli,
-            slo_list=self._slos,
-            start_time=start_time,
-            end_time=end_time,
-        )
 
     def calculate_score(
         self,
@@ -349,8 +334,9 @@ def compute_resiliency(*,
 
     try:
         resiliency_obj = Resiliency(alerts_yaml_path)
-        resiliency_obj.evaluate_slos(
-            prom_cli=prometheus,
+        resiliency_obj._results = evaluate_slos(
+            prom_cli=prometheus, 
+            slo_list=resiliency_obj._slos,
             start_time=start_time,
             end_time=end_time,
         )
@@ -409,3 +395,140 @@ def compute_resiliency(*,
     except Exception as exc:
         log.error("Failed to compute resiliency score: %s", exc)
         return None
+
+
+# -----------------------------------------------------------------------------
+# Helper utilities extracted from run_kraken.py
+# -----------------------------------------------------------------------------
+
+from typing import Tuple
+
+
+def add_scenario_reports(
+    *,
+    resiliency_obj: "Resiliency",
+    scenario_telemetries,
+    prom_cli: KrknPrometheus,
+    scenario_type: str,
+    batch_start_dt: datetime.datetime,
+    batch_end_dt: datetime.datetime,
+    weight: int | float = 1,
+    logger: Optional[logging.Logger] = None,
+) -> None:
+    """Evaluate SLOs for every telemetry item belonging to a scenario window,
+    store the result in *resiliency_obj* and enrich the telemetry list with a
+    compact resiliency breakdown.
+
+    Args:
+        resiliency_obj: Initialized :class:`Resiliency` orchestrator. If *None*,
+            the call becomes a no-op (saves caller side checks).
+        scenario_telemetries: Iterable with telemetry objects/dicts for the
+            current scenario batch window.
+        prom_cli: Pre-configured :class:`KrknPrometheus` instance.
+        scenario_type: Fallback scenario identifier in case individual
+            telemetry items do not provide one.
+        batch_start_dt: Fallback start timestamp for the batch window.
+        batch_end_dt: Fallback end timestamp for the batch window.
+        weight: Weight to assign to every scenario when calculating the final
+            weighted average.
+        logger: Optional custom logger.
+    """
+    if resiliency_obj is None:
+        return
+
+    log = logger or logging.getLogger(__name__)
+
+    for tel in scenario_telemetries:
+        try:
+            # -------- Extract timestamps & scenario name --------------------
+            if isinstance(tel, dict):
+                st_ts = tel.get("start_timestamp")
+                en_ts = tel.get("end_timestamp")
+                scen_name = tel.get("scenario", scenario_type)
+            else:
+                st_ts = getattr(tel, "start_timestamp", None)
+                en_ts = getattr(tel, "end_timestamp", None)
+                scen_name = getattr(tel, "scenario", scenario_type)
+
+            if st_ts and en_ts:
+                st_dt = datetime.datetime.fromtimestamp(int(st_ts))
+                en_dt = datetime.datetime.fromtimestamp(int(en_ts))
+            else:
+                st_dt = batch_start_dt
+                en_dt = batch_end_dt
+
+            # -------- Calculate resiliency score for the scenario -----------
+            resiliency_obj.add_scenario_report(
+                scenario_name=str(scen_name),
+                prom_cli=prom_cli,
+                start_time=st_dt,
+                end_time=en_dt,
+                weight=weight,
+                health_check_results=None,
+            )
+
+            compact = Resiliency.compact_breakdown(
+                resiliency_obj.scenario_reports[-1]
+            )
+            if isinstance(tel, dict):
+                tel["resiliency_report"] = compact
+            else:
+                setattr(tel, "resiliency_report", compact)
+        except Exception as exc:
+            log.error("Resiliency per-scenario evaluation failed: %s", exc)
+
+
+def finalize_and_save(
+    *,
+    resiliency_obj: "Resiliency",
+    prom_cli: KrknPrometheus,
+    total_start_time: datetime.datetime,
+    total_end_time: datetime.datetime,
+    run_mode: str = "standalone",
+    summary_path: str = "kraken.report",
+    detailed_path: str = "resiliency-report.json",
+    logger: Optional[logging.Logger] = None,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Finalize resiliency scoring, persist reports and return them.
+
+    Returns:
+        (summary_report, detailed_report)
+    """
+    if resiliency_obj is None:
+        return {}, {}
+
+    log = logger or logging.getLogger(__name__)
+
+    try:
+        resiliency_obj.finalize_report(
+            prom_cli=prom_cli,
+            total_start_time=total_start_time,
+            total_end_time=total_end_time,
+        )
+        summary = resiliency_obj.get_summary()
+        detailed = resiliency_obj.get_detailed_report()
+
+        if run_mode == "controller":
+            # krknctl expects the detailed report on stdout in a special format
+            try:
+                detailed_json = json.dumps(detailed)
+                print(f"KRKN_RESILIENCY_REPORT_JSON:{detailed_json}")
+                log.info("Resiliency report logged to stdout for krknctl.")
+            except Exception as exc:
+                log.error("Failed to serialize and log detailed resiliency report: %s", exc)
+        else:
+            # Stand-alone mode – write to files for post-run consumption
+            try:
+                with open(summary_path, "w", encoding="utf-8") as fp:
+                    json.dump(summary, fp, indent=2)
+                with open(detailed_path, "w", encoding="utf-8") as fp:
+                    json.dump(detailed, fp, indent=2)
+                log.info("Resiliency reports written: %s and %s", summary_path, detailed_path)
+            except Exception as io_exc:
+                log.error("Failed to write resiliency report files: %s", io_exc)
+
+        return summary, detailed
+
+    except Exception as exc:
+        log.error("Failed to finalize resiliency scoring: %s", exc)
+        return {}, {}
