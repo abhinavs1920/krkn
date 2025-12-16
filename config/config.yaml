@@ -131,5 +131,3 @@ kubevirt_checks:                                            # Utilizing virt che
     exit_on_failure:                                        # If value is True and VMI's are failing post chaos returns failure, values can be True/False
     disconnected: False     
     
-resiliency:
-    enabled: true
