@@ -196,7 +196,7 @@ class Resiliency:
             sum(rep["score"] * rep["weight"] for rep in self.scenario_reports) / total_weight
         )
 
-        # ---------------- Holistic stability score -----------------------------
+        # ---------------- Overall SLO evaluation across full test window -----------------------------
         full_slo_results = evaluate_slos(
             prom_cli=prom_cli,
             slo_list=self._slos,
@@ -204,7 +204,7 @@ class Resiliency:
             end_time=total_end_time,
         )
         slo_defs = {slo["name"]: slo["severity"] for slo in self._slos}
-        system_stability_score, full_breakdown = calculate_resiliency_score(
+        _overall_score, full_breakdown = calculate_resiliency_score(
             slo_definitions=slo_defs,
             prometheus_results=full_slo_results,
             health_check_results={},
@@ -214,22 +214,13 @@ class Resiliency:
         self.summary = {
             "scenarios": {rep["name"]: rep["score"] for rep in self.scenario_reports},
             "resiliency_score": resiliency_score,
-            "system_stability_score": system_stability_score,
             "passed_slos": full_breakdown.get("passed", 0),
             "total_slos": full_breakdown.get("passed", 0) + full_breakdown.get("failed", 0),
         }
 
+        # Detailed report currently limited to per-scenario information; system stability section removed
         self.detailed_report = {
             "scenarios": self.scenario_reports,
-            "system_stability": {
-                "window": {
-                    "start": total_start_time.isoformat(),
-                    "end": total_end_time.isoformat(),
-                },
-                "score": system_stability_score,
-                "breakdown": full_breakdown,
-                "slo_results": full_slo_results,
-            },
         }
 
     def get_summary(self) -> Dict[str, Any]:
